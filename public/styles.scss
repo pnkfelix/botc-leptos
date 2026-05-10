@@ -1,9 +1,6 @@
 /* --------------------- Open Props --------------------------- */
 
-/* the props */
 @import "https://unpkg.com/open-props";
-
-/* optional imports that use the props */
 @import "https://unpkg.com/open-props/normalize.min.css";
 @import "https://unpkg.com/open-props/buttons.min.css";
 
@@ -11,42 +8,322 @@
 
 body {
   font-family: sans-serif;
+  margin: 0;
+  padding: 1rem;
+}
+
+h1, h2, h3, h4 {
   text-align: center;
+  margin: 0.5rem 0;
 }
 
-.container {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-around;
-  align-items: center;
-}
+/* ===== Bag Builder ====================================== */
 
-.buttons {
-  display: flex;
-  justify-content: space-evenly;
-}
-
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  text-align: center;
+.bag-builder {
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 2rem;
 }
 
-p,
-button {
-  margin: var(--size-6);
-}
-
-body > picture,
-button {
-  display: block;
-  margin-left: auto;
-  margin-right: auto;
+.bag-builder .hint {
   text-align: center;
-  margin: 2rem;
+  color: #555;
+  margin: 0.5rem auto 1.5rem;
+  max-width: 800px;
+}
+
+/* --- Palette ---------------------------------------------- */
+
+.palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+  background: #f7f7f9;
+  border: 1px dashed #c0c0c8;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+}
+
+.team-group {
+  flex: 1 1 220px;
+  min-width: 200px;
+}
+
+.team-group h4 {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  text-align: left;
+  color: #444;
+}
+
+.role-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* --- Role chips ------------------------------------------- */
+
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 16px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  user-select: none;
+  cursor: grab;
+  border: 1px solid;
+  transition: opacity 0.15s, transform 0.05s;
+}
+
+.role-chip:active {
+  cursor: grabbing;
+  transform: scale(0.98);
+}
+
+.role-chip.placed {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.role-chip-townsfolk { background: #dbeafe; border-color: #60a5fa; color: #1e3a8a; }
+.role-chip-outsider  { background: #ddd6fe; border-color: #a78bfa; color: #4c1d95; }
+.role-chip-minion    { background: #fde68a; border-color: #f59e0b; color: #78350f; }
+.role-chip-demon     { background: #fecaca; border-color: #ef4444; color: #7f1d1d; }
+
+.role-chip .remove {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.1rem;
+  margin: 0;
+  cursor: pointer;
+  opacity: 0.6;
+}
+.role-chip .remove:hover { opacity: 1; }
+
+/* --- Venn container --------------------------------------- */
+/*
+ * Layout: two overlapping rectangles. "In Bag" (top-left) and "In Play"
+ * (bottom-right) overlap diagonally; the lens is "Bag AND Play".
+ *
+ *   ┌─ In Bag ────────────────────────────┐
+ *   │                                     │
+ *   │  ┌──── Bag (play unspec) ────────┐  │
+ *   │  │                               │  │
+ *   │  │   ┌── Bag, NOT in Play ──┐    │  │
+ *   │  │   │                      │    │  │
+ *   │  │   └──────────────────────┘    │  │
+ *   │  └───────────────────────────────┘  │
+ *   │                                     │
+ *   │              ┌── Bag & Play ────────┼─── In Play ───────┐
+ *   │              │                      │                    │
+ *   │              │   (overlap)          │   Play, NOT Bag    │
+ *   │              │                      │                    │
+ *   │              └──────────────────────┼────────────────────┤
+ *   └─────────────────────────────────────┘                    │
+ *                                         └────────────────────┘
+ *
+ *   Neither: [chip] [chip] ...   (drop on container background)
+ */
+
+.venn-container {
+  position: relative;
+  width: 100%;
+  min-height: 520px;
+  background: #fafafa;
+  border: 2px dashed transparent;
+  border-radius: 16px;
+  margin-bottom: 1rem;
+  padding-bottom: 100px; /* room for the Neither list */
+}
+
+.venn-container-active {
+  border-color: #94a3b8;
+  background: #f1f5f9;
+}
+
+/* The Venn rectangles ARE the drop targets. Their visible overlap is
+ * implicitly the "Bag AND Play" zone — drops landing on that pixel region
+ * are routed by play-rect's handler (which checks the cursor against
+ * bag-rect's bounds at drop time). */
+
+.venn-rect {
+  position: absolute;
+  border: 2px solid;
+  border-radius: 14px;
+}
+
+.venn-rect-bag {
+  top: 20px;
+  left: 1%;
+  width: 65%;
+  height: 280px;
+  border-color: rgba(37, 99, 235, 0.7);
+  background: rgba(37, 99, 235, 0.06);
+  z-index: 1;
+}
+
+.venn-rect-play {
+  top: 160px;
+  right: 1%;
+  width: 65%;
+  height: 280px;
+  border-color: rgba(220, 38, 38, 0.7);
+  background: rgba(220, 38, 38, 0.06);
+  z-index: 2; /* on top of bag in the overlap */
+}
+
+.venn-rect-active {
+  background-color: rgba(99, 102, 241, 0.1);
+  border-style: solid;
+  border-width: 3px;
+}
+
+.venn-rect-label {
+  position: absolute;
+  top: 6px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #475569;
+  pointer-events: none;
+}
+
+.venn-rect-bag .venn-rect-label  { left: 14px; }
+.venn-rect-play .venn-rect-label { right: 14px; }
+
+/* Chip-list display areas inside the rectangles. They are children of the
+ * rect div, so drops on them bubble to the rect's drop handler (good). */
+
+.zone-chips {
+  position: absolute;
+  padding: 0.4rem;
+}
+
+.zone-chips-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #64748b;
+  margin-bottom: 0.3rem;
+}
+
+.zone-chips .role-list {
+  min-height: 30px;
+}
+
+/* Inside venn-rect-bag: bag-only chips occupy the upper part of the
+ * non-overlap area (left of the overlap, above the not-play sub-rect). */
+.zone-chips-bag-only {
+  top: 32px;
+  left: 12px;
+  width: 38%;
+}
+
+/* Inside venn-rect-play: bag-and-play chips on the LEFT (overlap region). */
+.zone-chips-bag-and-play {
+  top: 32px;
+  left: 12px;
+  width: 44%;
+}
+
+/* Inside venn-rect-play: play-not-bag chips on the RIGHT (non-overlap). */
+.zone-chips-play-not-bag {
+  top: 32px;
+  right: 12px;
+  width: 38%;
+}
+
+/* --- Drop zones (now only the inner not-play sub-rect) ---- */
+
+.drop-zone {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.92);
+  border: 2px dashed #94a3b8;
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+  z-index: 4; /* above both rects */
+}
+
+.drop-zone-active {
+  background: #fff;
+  border-color: #475569;
+  border-style: solid;
+}
+
+.drop-zone h3 {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.35rem 0;
+  color: #475569;
+  text-align: left;
+}
+
+.drop-zone .role-list {
+  min-height: 36px;
+}
+
+.drop-zone .empty-hint {
+  color: #94a3b8;
+  font-style: italic;
+  font-size: 0.75rem;
+  padding: 0.3rem;
+}
+
+/* Bag, NOT in Play: visually nested INSIDE the bag rectangle as a
+ * stronger-tinted sub-area. Higher z-index so drops on its area land
+ * here, not on the bag rect underneath. */
+.drop-zone-bag-notplay {
+  top: 170px;
+  left: 6%;
+  width: 22%;
+  min-height: 100px;
+  z-index: 4;
+  background: rgba(37, 99, 235, 0.14);
+  border-color: #2563eb;
+}
+
+/* The "neither" zone is the container itself; this is the visible badge. */
+.venn-neither-badge {
+  position: absolute;
+  bottom: 12px;
+  right: 16px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.venn-neither-list {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 36px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.venn-neither-list-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Hide the in-zone label/empty-hint for "neither" since it's on the container. */
+.drop-zone-neither {
+  display: none;
 }
