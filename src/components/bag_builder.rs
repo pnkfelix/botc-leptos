@@ -40,7 +40,6 @@ fn in_play_slot(role: Role, prefer_in_bag: bool) -> Slot {
 fn resolve_bag_only(_: Role) -> Slot { Slot::BagOnly }
 fn resolve_bag_not_play(_: Role) -> Slot { Slot::BagNotPlay }
 fn resolve_bluffs(_: Role) -> Slot { Slot::Bluffs }
-fn resolve_neither(_: Role) -> Slot { Slot::Neither }
 fn resolve_bag_and_play(role: Role) -> Slot { in_play_slot(role, true) }
 fn resolve_play_not_bag(role: Role) -> Slot { in_play_slot(role, false) }
 
@@ -55,23 +54,14 @@ pub fn BagBuilder() -> impl IntoView {
                 "Drag a role into the zone for the constraint you want. The wide "
                 <b>"In Bag"</b>" rectangle holds the three in-bag zones; "<b>"Not in Play"</b>
                 " and "<b>"In Play"</b>" hang off its bottom — each one's upper zone overlaps "
-                <b>"In Bag"</b>" (an intersection), its lower zone hangs outside. The "
-                <b>"neither"</b>" strip at the bottom is \"not in bag and not in play\"; "
-                "dropping outside any zone also lands there."
+                <b>"In Bag"</b>" (an intersection), its lower zone hangs outside. Drag a role "
+                "back up to the palette (or hit ×) to un-place it; dropping outside any zone "
+                "leaves it where it was."
             </p>
 
             <Palette constraints=constraints />
 
-            <section
-                class="venn-container"
-                on:dragover=move |ev: DragEvent| ev.prevent_default()
-                on:drop=move |ev: DragEvent| {
-                    ev.prevent_default();
-                    if let Some(id) = parse_token_id(&ev) {
-                        constraints.update(|c| c.place(id, Slot::Neither));
-                    }
-                }
-            >
+            <section class="venn-container">
                 // Decorative rectangles: grid items that span rows, painted
                 // behind the zones and non-interactive (CSS pointer-events).
                 <div class="venn-rect venn-rect-bag"></div>
@@ -116,13 +106,6 @@ pub fn BagBuilder() -> impl IntoView {
                     caption="in play, not in bag"
                     show=Slot::PlayNotBag
                     resolve=resolve_play_not_bag
-                    constraints=constraints
-                />
-                <ZoneChips
-                    wrapper_class="zone-neither"
-                    caption="neither — not in bag, not in play"
-                    show=Slot::Neither
-                    resolve=resolve_neither
                     constraints=constraints
                 />
             </section>

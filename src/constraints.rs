@@ -46,8 +46,6 @@ pub enum Slot {
     /// NOT in bag, NOT in play, and shown to the Demon as one of its bluffs.
     /// Lives in the part of Not-in-Play that is outside In-Bag.
     Bluffs,
-    /// Explicitly not in bag and not in play.
-    Neither,
 }
 
 impl Slot {
@@ -58,7 +56,6 @@ impl Slot {
         Slot::BagAndPlay,
         Slot::PlayNotBag,
         Slot::Bluffs,
-        Slot::Neither,
     ];
 }
 
@@ -72,7 +69,6 @@ pub struct Constraints {
     bag_and_play: Vec<RoleToken>,
     play_not_bag: Vec<RoleToken>,
     bluffs: Vec<RoleToken>,
-    neither: Vec<RoleToken>,
 }
 
 impl Constraints {
@@ -93,7 +89,6 @@ impl Constraints {
             bag_and_play: Vec::new(),
             play_not_bag: Vec::new(),
             bluffs: Vec::new(),
-            neither: Vec::new(),
         }
     }
 
@@ -105,7 +100,6 @@ impl Constraints {
             Slot::BagAndPlay => &self.bag_and_play,
             Slot::PlayNotBag => &self.play_not_bag,
             Slot::Bluffs => &self.bluffs,
-            Slot::Neither => &self.neither,
         }
     }
 
@@ -132,7 +126,6 @@ impl Constraints {
             Slot::BagAndPlay => &mut self.bag_and_play,
             Slot::PlayNotBag => &mut self.play_not_bag,
             Slot::Bluffs => &mut self.bluffs,
-            Slot::Neither => &mut self.neither,
         }
     }
 
