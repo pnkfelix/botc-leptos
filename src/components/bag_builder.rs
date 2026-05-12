@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 use web_sys::DragEvent;
 
+use crate::constraints::{Constraints, Slot, TokenId};
 use crate::roles::{InPlayRouting, Role, Team};
 
 const TEAMS: &[Team] = &[
@@ -10,165 +11,106 @@ const TEAMS: &[Team] = &[
     Team::Demon,
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Zone {
-    BagNotPlay,
-    Bag,
-    BagAndPlay,
-    PlayNotBag,
-    NeitherBagNorPlay,
-}
-
-impl Zone {
-    pub fn label(self) -> &'static str {
-        match self {
-            Zone::BagNotPlay => "In Bag, NOT in Play",
-            Zone::Bag => "In Bag (play unspecified)",
-            Zone::BagAndPlay => "In Bag AND in Play",
-            Zone::PlayNotBag => "In Play, NOT in Bag",
-            Zone::NeitherBagNorPlay => "NOT in Bag, NOT in Play",
-        }
-    }
-
-    pub fn css_class(self) -> &'static str {
-        match self {
-            Zone::BagNotPlay => "bag-notplay",
-            Zone::Bag => "bag-only",
-            Zone::BagAndPlay => "bag-and-play",
-            Zone::PlayNotBag => "play-notbag",
-            Zone::NeitherBagNorPlay => "neither",
-        }
-    }
-}
-
-const DRAG_ZONE_PREFIX: &str = "zone:";
-const DRAG_PALETTE: &str = "palette";
-
-fn parse_role_from_event(ev: &DragEvent) -> Option<Role> {
+fn parse_token_id(ev: &DragEvent) -> Option<TokenId> {
     let dt = ev.data_transfer()?;
     let payload = dt.get_data("text/plain").ok()?;
-    let role_id = payload
-        .strip_prefix(DRAG_ZONE_PREFIX)
-        .and_then(|rest| rest.split_once(':').map(|(_, id)| id))
-        .or_else(|| payload.strip_prefix(&format!("{DRAG_PALETTE}:")));
-    role_id.and_then(Role::from_id)
+    TokenId::parse(&payload)
 }
 
 #[component]
 pub fn BagBuilder() -> impl IntoView {
-    // One signal per zone holding the roles currently assigned to that constraint.
-    // A role is in at most one zone; absence from all zones = "unspecified" (palette).
-    let zones: [(Zone, RwSignal<Vec<Role>>); 5] = [
-        (Zone::BagNotPlay, RwSignal::new(Vec::new())),
-        (Zone::Bag, RwSignal::new(Vec::new())),
-        (Zone::BagAndPlay, RwSignal::new(Vec::new())),
-        (Zone::PlayNotBag, RwSignal::new(Vec::new())),
-        (Zone::NeitherBagNorPlay, RwSignal::new(Vec::new())),
-    ];
-
-    // Closure to find the signal for a zone.
-    let signal_for = move |z: Zone| -> RwSignal<Vec<Role>> {
-        zones.iter().find(|(zz, _)| *zz == z).map(|(_, s)| *s).unwrap()
-    };
-
-    // A role placed somewhere has its previous home cleared first.
-    let remove_everywhere = move |role: Role| {
-        for (_, sig) in zones.iter() {
-            sig.update(|v| v.retain(|r| *r != role));
-        }
-    };
-
-    // Compute the set of roles currently assigned to *any* zone — used by the palette
-    // to dim/hide already-placed roles.
-    let placed = Memo::new(move |_| {
-        let mut set = Vec::new();
-        for (_, sig) in zones.iter() {
-            for r in sig.get() {
-                set.push(r);
-            }
-        }
-        set
-    });
-
-    let drop_into_zone = move |target: Zone, ev: DragEvent| {
-        ev.prevent_default();
-        let Some(dt) = ev.data_transfer() else { return };
-        let Ok(payload) = dt.get_data("text/plain") else { return };
-        let role_id = payload
-            .strip_prefix(DRAG_ZONE_PREFIX)
-            .and_then(|rest| rest.split_once(':').map(|(_, id)| id))
-            .or_else(|| payload.strip_prefix(&format!("{DRAG_PALETTE}:")));
-        let Some(role_id) = role_id else { return };
-        let Some(role) = Role::from_id(role_id) else { return };
-        remove_everywhere(role);
-        signal_for(target).update(|v| v.push(role));
-    };
-
-    // Dropping back onto the palette = clear the role's constraint.
-    let drop_into_palette = move |ev: DragEvent| {
-        ev.prevent_default();
-        let Some(dt) = ev.data_transfer() else { return };
-        let Ok(payload) = dt.get_data("text/plain") else { return };
-        let Some(role_id) = payload
-            .strip_prefix(DRAG_ZONE_PREFIX)
-            .and_then(|rest| rest.split_once(':').map(|(_, id)| id))
-        else {
-            return;
-        };
-        let Some(role) = Role::from_id(role_id) else { return };
-        remove_everywhere(role);
-    };
+    let constraints = RwSignal::new(Constraints::initial());
 
     let bag_rect_ref: NodeRef<leptos::html::Div> = NodeRef::new();
 
-    // Drop on the play rectangle: the role's own InPlayRouting decides for us.
-    // - ImpliesInBag      → BagAndPlay
-    // - ImpliesNotInBag   → PlayNotBag
-    // - CanBeInOrOutOfBag → coord-based: if the cursor is also inside the bag
-    //   rectangle (i.e. in the visual overlap) → BagAndPlay, else → PlayNotBag.
-    //   The user disambiguates by where they drop.
+    let bag_dragging = RwSignal::new(false);
+    let play_dragging = RwSignal::new(false);
+    let notplay_dragging = RwSignal::new(false);
+    let container_dragging = RwSignal::new(false);
+
+    // Returns true if the drop's cursor lands within the "In Bag" rect's box.
+    let cursor_in_bag_rect = move |ev: &DragEvent| -> bool {
+        bag_rect_ref
+            .get()
+            .map(|el| {
+                let r = el.get_bounding_client_rect();
+                let x = ev.client_x() as f64;
+                let y = ev.client_y() as f64;
+                x >= r.left() && x <= r.right() && y >= r.top() && y <= r.bottom()
+            })
+            .unwrap_or(false)
+    };
+
+    // Generic drop handler for slots whose target is fixed.
+    let drop_into_slot = move |target: Slot, ev: DragEvent| {
+        ev.prevent_default();
+        if let Some(id) = parse_token_id(&ev) {
+            leptos::logging::log!("drop_into_slot id={} target={:?}", id.0, target);
+            constraints.update(|c| c.place(id, target));
+            constraints.with(|c| {
+                leptos::logging::log!(
+                    "after place: palette={} bag_only={} bag_not_play={} bag_and_play={} play_not_bag={} bluffs={} neither={}",
+                    c.slot(Slot::Palette).len(),
+                    c.slot(Slot::BagOnly).len(),
+                    c.slot(Slot::BagNotPlay).len(),
+                    c.slot(Slot::BagAndPlay).len(),
+                    c.slot(Slot::PlayNotBag).len(),
+                    c.slot(Slot::Bluffs).len(),
+                    c.slot(Slot::Neither).len(),
+                );
+            });
+        } else {
+            leptos::logging::log!("drop_into_slot: no token id parsed, target was {:?}", target);
+        }
+    };
+
+    // Play-rect drop: the role's InPlayRouting picks the slot, with the
+    // ambiguous case (CanBeInOrOutOfBag) falling back to coord routing.
     let drop_on_play_rect = move |ev: DragEvent| {
         ev.prevent_default();
-        let Some(role) = parse_role_from_event(&ev) else { return };
-        let zone = match role.in_play_routing() {
-            InPlayRouting::ImpliesInBag => Zone::BagAndPlay,
-            InPlayRouting::ImpliesNotInBag => Zone::PlayNotBag,
+        let Some(id) = parse_token_id(&ev) else { return };
+        let role = constraints.with(|c| c.token(id).map(|t| t.role()));
+        let Some(role) = role else { return };
+        let target = match role.in_play_routing() {
+            InPlayRouting::ImpliesInBag => Slot::BagAndPlay,
+            InPlayRouting::ImpliesNotInBag => Slot::PlayNotBag,
             InPlayRouting::CanBeInOrOutOfBag => {
-                let cursor_in_bag = bag_rect_ref
-                    .get()
-                    .map(|el| {
-                        let r = el.get_bounding_client_rect();
-                        let x = ev.client_x() as f64;
-                        let y = ev.client_y() as f64;
-                        x >= r.left() && x <= r.right() && y >= r.top() && y <= r.bottom()
-                    })
-                    .unwrap_or(false);
-                if cursor_in_bag {
-                    Zone::BagAndPlay
+                if cursor_in_bag_rect(&ev) {
+                    Slot::BagAndPlay
                 } else {
-                    Zone::PlayNotBag
+                    Slot::PlayNotBag
                 }
             }
         };
-        remove_everywhere(role);
-        signal_for(zone).update(|v| v.push(role));
+        constraints.update(|c| c.place(id, target));
     };
 
-    let bag_dragging = RwSignal::new(false);
-    let play_dragging = RwSignal::new(false);
-    let container_dragging = RwSignal::new(false);
-    let neither_sig = signal_for(Zone::NeitherBagNorPlay);
+    // Not-in-Play-rect drop: landing inside the "In Bag" rect means the role's
+    // token is in the bag but the role isn't in play (a Drunk/Marionette-style
+    // decoy); landing outside the bag means a Demon bluff.
+    let drop_on_notplay_rect = move |ev: DragEvent| {
+        ev.prevent_default();
+        let Some(id) = parse_token_id(&ev) else { return };
+        let target = if cursor_in_bag_rect(&ev) {
+            Slot::BagNotPlay
+        } else {
+            Slot::Bluffs
+        };
+        constraints.update(|c| c.place(id, target));
+    };
 
     view! {
         <div class="bag-builder">
             <h2>"Trouble Brewing — Bag Builder"</h2>
             <p class="hint">
                 "Drag a role into the zone that captures the constraint you want. "
-                "The intersection of the two rectangles is implicitly "<b>"Bag AND Play"</b>". "
-                "Dropping on the empty container background = "<b>"Neither"</b>"."
+                "Where "<b>"In Bag"</b>" overlaps "<b>"In Play"</b>" is implicitly "<b>"Bag AND Play"</b>"; "
+                "where "<b>"In Bag"</b>" overlaps "<b>"Not in Play"</b>" is the decoy-token zone "
+                "("<b>"Bag, NOT in Play"</b>"). The part of "<b>"Not in Play"</b>" outside "<b>"In Bag"</b>" "
+                "holds the "<b>"Demon's bluffs"</b>". Dropping on the empty container background = "<b>"Neither"</b>"."
             </p>
 
-            <Palette placed=placed.into() on_drop_back=drop_into_palette />
+            <Palette constraints=constraints />
 
             <section
                 class=move || {
@@ -185,13 +127,12 @@ pub fn BagBuilder() -> impl IntoView {
                 on:dragleave=move |_| container_dragging.set(false)
                 on:drop=move |ev: DragEvent| {
                     container_dragging.set(false);
-                    drop_into_zone(Zone::NeitherBagNorPlay, ev);
+                    drop_into_slot(Slot::Neither, ev);
                 }
             >
-                // In Bag rectangle: drop target. Drops here that aren't caught
-                // by the inner not-play sub-rect (higher z) or the play
-                // rectangle (higher z in the overlap region) land here as
-                // "Bag (play unspec)".
+                // "In Bag": the wide rectangle spanning the top. Its clear
+                // areas (top band, side margins, the gap between the two lower
+                // rects) are the "bag, play unspecified" drop target.
                 <div
                     node_ref=bag_rect_ref
                     class=move || {
@@ -213,20 +154,62 @@ pub fn BagBuilder() -> impl IntoView {
                     on:drop=move |ev: DragEvent| {
                         ev.stop_propagation();
                         bag_dragging.set(false);
-                        drop_into_zone(Zone::Bag, ev);
+                        drop_into_slot(Slot::BagOnly, ev);
                     }
                 >
                     <span class="venn-rect-label">"In Bag"</span>
                     <ZoneChips
-                        zone=Zone::Bag
-                        contents=signal_for(Zone::Bag).into()
-                        on_remove=move |role| remove_everywhere(role)
+                        target=Slot::BagOnly
+                        constraints=constraints
                         wrapper_class="zone-chips zone-chips-bag-only"
                         zone_label="bag (play unspec)"
                     />
                 </div>
 
-                // In Play rectangle: drop target with coord-based routing.
+                // "Not in Play": lower-left rect, overlapping the left part of
+                // "In Bag" (mirror of "In Play"). Top sub-zone (inside In Bag)
+                // = "Bag, NOT in Play"; bottom sub-zone (outside) = Demon bluffs.
+                <div
+                    class=move || {
+                        if notplay_dragging.get() {
+                            "venn-rect venn-rect-notplay venn-rect-active"
+                        } else {
+                            "venn-rect venn-rect-notplay"
+                        }
+                    }
+                    on:dragover=move |ev: DragEvent| {
+                        ev.prevent_default();
+                        ev.stop_propagation();
+                        notplay_dragging.set(true);
+                    }
+                    on:dragleave=move |ev| {
+                        ev.stop_propagation();
+                        notplay_dragging.set(false);
+                    }
+                    on:drop=move |ev: DragEvent| {
+                        ev.stop_propagation();
+                        notplay_dragging.set(false);
+                        drop_on_notplay_rect(ev);
+                    }
+                >
+                    <span class="venn-rect-label">"Not in Play"</span>
+                    <ZoneChips
+                        target=Slot::BagNotPlay
+                        constraints=constraints
+                        wrapper_class="zone-chips zone-chips-inbag zone-chips-bag-not-play"
+                        zone_label="bag, NOT in play"
+                    />
+                    <ZoneChips
+                        target=Slot::Bluffs
+                        constraints=constraints
+                        wrapper_class="zone-chips zone-chips-bluffs"
+                        zone_label="demon bluffs"
+                    />
+                </div>
+
+                // "In Play": lower-right rect, overlapping the right part of
+                // "In Bag". Top sub-zone (inside In Bag) = "Bag AND Play";
+                // bottom sub-zone (outside) = "Play, NOT in Bag".
                 <div
                     class=move || {
                         if play_dragging.get() {
@@ -252,148 +235,66 @@ pub fn BagBuilder() -> impl IntoView {
                 >
                     <span class="venn-rect-label">"In Play"</span>
                     <ZoneChips
-                        zone=Zone::BagAndPlay
-                        contents=signal_for(Zone::BagAndPlay).into()
-                        on_remove=move |role| remove_everywhere(role)
-                        wrapper_class="zone-chips zone-chips-bag-and-play"
+                        target=Slot::BagAndPlay
+                        constraints=constraints
+                        wrapper_class="zone-chips zone-chips-inbag zone-chips-bag-and-play"
                         zone_label="bag ∩ play"
                     />
                     <ZoneChips
-                        zone=Zone::PlayNotBag
-                        contents=signal_for(Zone::PlayNotBag).into()
-                        on_remove=move |role| remove_everywhere(role)
+                        target=Slot::PlayNotBag
+                        constraints=constraints
                         wrapper_class="zone-chips zone-chips-play-not-bag"
-                        zone_label="play, not bag"
+                        zone_label="play, NOT in bag"
                     />
                 </div>
 
-                // Inner not-play sub-rect: nested drop target inside bag area.
-                <DropZone
-                    zone=Zone::BagNotPlay
-                    contents=signal_for(Zone::BagNotPlay).into()
-                    on_drop=move |ev| drop_into_zone(Zone::BagNotPlay, ev)
-                    on_remove=move |role| remove_everywhere(role)
-                />
-
                 <div class="venn-neither-badge" aria-hidden="true">
-                    {Zone::NeitherBagNorPlay.label()}
+                    {Slot::Neither.label()}
                 </div>
-                <NeitherList
-                    contents=neither_sig.into()
-                    on_remove=move |role| remove_everywhere(role)
-                />
+                <NeitherList constraints=constraints />
             </section>
         </div>
     }
 }
 
-#[component]
-fn ZoneChips<R>(
-    zone: Zone,
-    contents: Signal<Vec<Role>>,
-    on_remove: R,
-    wrapper_class: &'static str,
-    zone_label: &'static str,
-) -> impl IntoView
-where
-    R: Fn(Role) + 'static + Copy + Send + Sync,
-{
-    view! {
-        <div class=wrapper_class>
-            <div class="zone-chips-label">{zone_label}</div>
-            <div class="role-list">
-                {move || contents.get().into_iter().map(|role| {
-                    let id = role.id();
-                    let zc = zone.css_class();
-                    view! {
-                        <div
-                            class=format!("role-chip role-chip-{}", role.team().css_class())
-                            draggable="true"
-                            on:dragstart=move |ev: DragEvent| {
-                                if let Some(dt) = ev.data_transfer() {
-                                    let _ = dt.set_data(
-                                        "text/plain",
-                                        &format!("{DRAG_ZONE_PREFIX}{}:{id}", zc),
-                                    );
-                                    dt.set_effect_allowed("move");
-                                }
-                            }
-                        >
-                            <span class="role-name">{role.name()}</span>
-                            <button
-                                class="remove"
-                                on:click=move |_| on_remove(role)
-                                title="Remove constraint"
-                            >"×"</button>
-                        </div>
-                    }
-                }).collect_view()}
-            </div>
-        </div>
-    }
+/// Sorted (TokenId, Role) snapshot of a slot's contents — used by the various
+/// chip-list renders so display order is stable across moves.
+fn slot_snapshot(constraints: RwSignal<Constraints>, slot: Slot) -> Vec<(TokenId, Role)> {
+    constraints.with(|c| {
+        let mut tokens: Vec<_> = c.slot(slot).iter().map(|t| (t.id(), t.role())).collect();
+        tokens.sort_by_key(|(id, _)| *id);
+        tokens
+    })
 }
 
 #[component]
-fn NeitherList<R>(contents: Signal<Vec<Role>>, on_remove: R) -> impl IntoView
-where
-    R: Fn(Role) + 'static + Copy + Send + Sync,
-{
-    view! {
-        <Show when=move || !contents.get().is_empty()>
-            <div class="venn-neither-list">
-                <span class="venn-neither-list-label">"Neither:"</span>
-                {move || contents.get().into_iter().map(|role| {
-                    let id = role.id();
-                    view! {
-                        <div
-                            class=format!("role-chip role-chip-{}", role.team().css_class())
-                            draggable="true"
-                            on:dragstart=move |ev: DragEvent| {
-                                if let Some(dt) = ev.data_transfer() {
-                                    let _ = dt.set_data(
-                                        "text/plain",
-                                        &format!("{DRAG_ZONE_PREFIX}neither:{id}"),
-                                    );
-                                    dt.set_effect_allowed("move");
-                                }
-                            }
-                        >
-                            <span class="role-name">{role.name()}</span>
-                            <button
-                                class="remove"
-                                on:click=move |_| on_remove(role)
-                                title="Remove constraint"
-                            >"×"</button>
-                        </div>
-                    }
-                }).collect_view()}
-            </div>
-        </Show>
-    }
-}
-
-#[component]
-fn Palette<F>(placed: Signal<Vec<Role>>, on_drop_back: F) -> impl IntoView
-where
-    F: Fn(DragEvent) + 'static + Copy + Send + Sync,
-{
+fn Palette(constraints: RwSignal<Constraints>) -> impl IntoView {
     view! {
         <section
             class="palette"
             on:dragover=move |ev: DragEvent| ev.prevent_default()
-            on:drop=move |ev: DragEvent| on_drop_back(ev)
+            on:drop=move |ev: DragEvent| {
+                ev.prevent_default();
+                if let Some(id) = parse_token_id(&ev) {
+                    constraints.update(|c| c.place(id, Slot::Palette));
+                }
+            }
         >
             {TEAMS.iter().copied().map(|team| {
                 view! {
                     <div class=format!("team-group team-{}", team.css_class())>
                         <h4>{team.label()}</h4>
                         <div class="role-list">
-                            {Role::ALL.iter().copied()
-                                .filter(move |r| r.team() == team)
-                                .map(|role| view! {
-                                    <PaletteChip role=role placed=placed />
-                                })
-                                .collect_view()}
+                            {move || {
+                                let snap = slot_snapshot(constraints, Slot::Palette);
+                                leptos::logging::log!("Palette render team={:?} total={}", team, snap.len());
+                                snap.into_iter()
+                                    .filter(|(_, r)| r.team() == team)
+                                    .map(|(id, role)| view! {
+                                        <PaletteChip id=id role=role />
+                                    })
+                                    .collect_view()
+                            }}
                         </div>
                     </div>
                 }
@@ -403,22 +304,14 @@ where
 }
 
 #[component]
-fn PaletteChip(role: Role, placed: Signal<Vec<Role>>) -> impl IntoView {
-    let id = role.id();
-    let dim = move || placed.get().contains(&role);
+fn PaletteChip(id: TokenId, role: Role) -> impl IntoView {
     view! {
         <div
-            class=move || {
-                let mut c = format!("role-chip role-chip-{}", role.team().css_class());
-                if dim() {
-                    c.push_str(" placed");
-                }
-                c
-            }
+            class=format!("role-chip role-chip-{}", role.team().css_class())
             draggable="true"
             on:dragstart=move |ev: DragEvent| {
                 if let Some(dt) = ev.data_transfer() {
-                    let _ = dt.set_data("text/plain", &format!("{DRAG_PALETTE}:{id}"));
+                    let _ = dt.set_data("text/plain", &id.0.to_string());
                     dt.set_effect_allowed("move");
                 }
             }
@@ -429,74 +322,73 @@ fn PaletteChip(role: Role, placed: Signal<Vec<Role>>) -> impl IntoView {
 }
 
 #[component]
-fn DropZone<D, R>(
-    zone: Zone,
-    contents: Signal<Vec<Role>>,
-    on_drop: D,
-    on_remove: R,
-) -> impl IntoView
-where
-    D: Fn(DragEvent) + 'static + Copy + Send + Sync,
-    R: Fn(Role) + 'static + Copy + Send + Sync,
-{
-    let dragging_over = RwSignal::new(false);
+fn ZoneChips(
+    target: Slot,
+    constraints: RwSignal<Constraints>,
+    wrapper_class: &'static str,
+    zone_label: &'static str,
+) -> impl IntoView {
+    leptos::logging::log!("ZoneChips body executing target={:?} label={:?}", target, zone_label);
+    view! {
+        <div class=wrapper_class>
+            <div class="zone-chips-label">{zone_label}</div>
+            <div class="role-list">
+                {move || {
+                    let snap = slot_snapshot(constraints, target);
+                    leptos::logging::log!("ZoneChips render target={:?} count={}", target, snap.len());
+                    snap.into_iter()
+                        .map(|(id, role)| view! {
+                            <RemovableChip id=id role=role constraints=constraints />
+                        })
+                        .collect_view()
+                }}
+            </div>
+        </div>
+    }
+}
 
+#[component]
+fn RemovableChip(
+    id: TokenId,
+    role: Role,
+    constraints: RwSignal<Constraints>,
+) -> impl IntoView {
     view! {
         <div
-            class=move || {
-                let base = format!("drop-zone drop-zone-{}", zone.css_class());
-                if dragging_over.get() {
-                    format!("{base} drop-zone-active")
-                } else {
-                    base
+            class=format!("role-chip role-chip-{}", role.team().css_class())
+            draggable="true"
+            on:dragstart=move |ev: DragEvent| {
+                if let Some(dt) = ev.data_transfer() {
+                    let _ = dt.set_data("text/plain", &id.0.to_string());
+                    dt.set_effect_allowed("move");
                 }
             }
-            on:dragover=move |ev: DragEvent| {
-                ev.prevent_default();
-                ev.stop_propagation();
-                dragging_over.set(true);
-            }
-            on:dragleave=move |ev| {
-                ev.stop_propagation();
-                dragging_over.set(false);
-            }
-            on:drop=move |ev: DragEvent| {
-                ev.stop_propagation();
-                dragging_over.set(false);
-                on_drop(ev);
-            }
         >
-            <h3>{zone.label()}</h3>
-            <div class="role-list">
-                {move || contents.get().into_iter().map(|role| {
-                    let id = role.id();
-                    view! {
-                        <div
-                            class=format!("role-chip role-chip-{}", role.team().css_class())
-                            draggable="true"
-                            on:dragstart=move |ev: DragEvent| {
-                                if let Some(dt) = ev.data_transfer() {
-                                    let _ = dt.set_data(
-                                        "text/plain",
-                                        &format!("{DRAG_ZONE_PREFIX}{}:{id}", zone.css_class()),
-                                    );
-                                    dt.set_effect_allowed("move");
-                                }
-                            }
-                        >
-                            <span class="role-name">{role.name()}</span>
-                            <button
-                                class="remove"
-                                on:click=move |_| on_remove(role)
-                                title="Remove constraint"
-                            >"×"</button>
-                        </div>
-                    }
-                }).collect_view()}
-            </div>
-            <Show when=move || contents.get().is_empty()>
-                <div class="empty-hint">"drop role here"</div>
-            </Show>
+            <span class="role-name">{role.name()}</span>
+            <button
+                class="remove"
+                on:click=move |_| {
+                    constraints.update(|c| c.place(id, Slot::Palette));
+                }
+                title="Return to palette"
+            >"×"</button>
         </div>
+    }
+}
+
+#[component]
+fn NeitherList(constraints: RwSignal<Constraints>) -> impl IntoView {
+    view! {
+        <Show when=move || constraints.with(|c| !c.slot(Slot::Neither).is_empty())>
+            <div class="venn-neither-list">
+                <span class="venn-neither-list-label">"Neither:"</span>
+                {move || slot_snapshot(constraints, Slot::Neither)
+                    .into_iter()
+                    .map(|(id, role)| view! {
+                        <RemovableChip id=id role=role constraints=constraints />
+                    })
+                    .collect_view()}
+            </div>
+        </Show>
     }
 }

@@ -110,38 +110,39 @@ h1, h2, h3, h4 {
 
 /* --- Venn container --------------------------------------- */
 /*
- * Layout: two overlapping rectangles. "In Bag" (top-left) and "In Play"
- * (bottom-right) overlap diagonally; the lens is "Bag AND Play".
+ * Symmetric layout: "In Bag" is a wide rectangle spanning the top. "Not in
+ * Play" and "In Play" are two narrower rectangles hanging below it, placed
+ * mirror-image about the vertical centre line of "In Bag", each overlapping
+ * its lower edge. Within each lower rect the part that lies inside "In Bag"
+ * is an intersection zone; the part that hangs below is the disjoint zone:
  *
- *   ┌─ In Bag ────────────────────────────┐
- *   │                                     │
- *   │  ┌──── Bag (play unspec) ────────┐  │
- *   │  │                               │  │
- *   │  │   ┌── Bag, NOT in Play ──┐    │  │
- *   │  │   │                      │    │  │
- *   │  │   └──────────────────────┘    │  │
- *   │  └───────────────────────────────┘  │
- *   │                                     │
- *   │              ┌── Bag & Play ────────┼─── In Play ───────┐
- *   │              │                      │                    │
- *   │              │   (overlap)          │   Play, NOT Bag    │
- *   │              │                      │                    │
- *   │              └──────────────────────┼────────────────────┤
- *   └─────────────────────────────────────┘                    │
- *                                         └────────────────────┘
+ *   ┌──────────────────────── IN BAG ─────────────────────────┐
+ *   │                       bag (play unspec): [chip] ...      │
+ *   │  ┌──── NOT IN PLAY ─────┐          ┌──── IN PLAY ──────┐ │
+ *   │  │ bag, NOT in play     │          │ bag ∩ play        │ │
+ *   └──┤  [chip] ...          ├──────────┤  [chip] ...       ├─┘
+ *      │ ── ── ── ── ── ── ── │          │ ── ── ── ── ── ── │
+ *      │ demon bluffs         │          │ play, NOT in bag  │
+ *      │  [chip] ...          │          │  [chip] ...       │
+ *      └──────────────────────┘          └───────────────────┘
  *
  *   Neither: [chip] [chip] ...   (drop on container background)
+ *
+ * Each lower rect IS its own drop target; whether a drop lands "in bag" is
+ * decided by testing the cursor against the In-Bag rect's bounding box (so
+ * the upper sub-zone routes to the intersection slot, the lower to the
+ * disjoint slot). The In-Bag rect's uncovered area = "bag (play unspec)".
  */
 
 .venn-container {
   position: relative;
   width: 100%;
-  min-height: 520px;
+  min-height: 540px;
   background: #fafafa;
   border: 2px dashed transparent;
   border-radius: 16px;
   margin-bottom: 1rem;
-  padding-bottom: 100px; /* room for the Neither list */
+  padding-bottom: 80px; /* room for the Neither list */
 }
 
 .venn-container-active {
@@ -149,10 +150,9 @@ h1, h2, h3, h4 {
   background: #f1f5f9;
 }
 
-/* The Venn rectangles ARE the drop targets. Their visible overlap is
- * implicitly the "Bag AND Play" zone — drops landing on that pixel region
- * are routed by play-rect's handler (which checks the cursor against
- * bag-rect's bounds at drop time). */
+/* Each rectangle IS a drop target. "In Bag" (z 1) spans the top; the two
+ * lower rects (z 2) sit on top of it where they overlap. A drop on a lower
+ * rect routes by testing the cursor against the In-Bag rect's bounds. */
 
 .venn-rect {
   position: absolute;
@@ -160,24 +160,40 @@ h1, h2, h3, h4 {
   border-radius: 14px;
 }
 
+/* Wide rect across the top. Geometry note for the lower rects below:
+ *   In Bag:   x [2%, 98%],  y [16px, 246px]
+ *   centre line at x = 50% — the two lower rects mirror about it. */
 .venn-rect-bag {
-  top: 20px;
-  left: 1%;
-  width: 65%;
-  height: 280px;
+  top: 16px;
+  left: 2%;
+  width: 96%;
+  height: 230px;
   border-color: rgba(37, 99, 235, 0.7);
   background: rgba(37, 99, 235, 0.06);
   z-index: 1;
 }
 
+/* Lower-left rect: x [6%, 42%] (centre 24%, i.e. 26% left of the 50% line),
+ * y [110px, 380px] — so y [110, 246] overlaps In Bag, y [246, 380] hangs below. */
+.venn-rect-notplay {
+  top: 110px;
+  left: 6%;
+  width: 36%;
+  height: 270px;
+  border-color: rgba(100, 116, 139, 0.78);
+  background: rgba(100, 116, 139, 0.08);
+  z-index: 2;
+}
+
+/* Lower-right rect: mirror of Not-in-Play about x = 50% → x [58%, 94%]. */
 .venn-rect-play {
-  top: 160px;
-  right: 1%;
-  width: 65%;
-  height: 280px;
+  top: 110px;
+  left: 58%;
+  width: 36%;
+  height: 270px;
   border-color: rgba(220, 38, 38, 0.7);
   background: rgba(220, 38, 38, 0.06);
-  z-index: 2; /* on top of bag in the overlap */
+  z-index: 2;
 }
 
 .venn-rect-active {
@@ -190,15 +206,16 @@ h1, h2, h3, h4 {
   position: absolute;
   top: 6px;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #475569;
   pointer-events: none;
 }
 
-.venn-rect-bag .venn-rect-label  { left: 14px; }
-.venn-rect-play .venn-rect-label { right: 14px; }
+.venn-rect-bag .venn-rect-label     { left: 50%; transform: translateX(-50%); }
+.venn-rect-notplay .venn-rect-label { left: 12px; }
+.venn-rect-play .venn-rect-label    { right: 12px; }
 
 /* Chip-list display areas inside the rectangles. They are children of the
  * rect div, so drops on them bubble to the rect's drop handler (good). */
@@ -220,76 +237,46 @@ h1, h2, h3, h4 {
   min-height: 30px;
 }
 
-/* Inside venn-rect-bag: bag-only chips occupy the upper part of the
- * non-overlap area (left of the overlap, above the not-play sub-rect). */
+/* In-Bag rect: "bag (play unspec)" chips occupy the top band, above the two
+ * lower rects (which start at container-y 110px). */
 .zone-chips-bag-only {
-  top: 32px;
-  left: 12px;
-  width: 38%;
+  top: 26px;
+  left: 3%;
+  width: 94%;
 }
 
-/* Inside venn-rect-play: bag-and-play chips on the LEFT (overlap region). */
-.zone-chips-bag-and-play {
-  top: 32px;
-  left: 12px;
-  width: 44%;
+/* The upper sub-zone of each lower rect overlaps "In Bag" — a faint blue
+ * tint so the In-Bag boundary inside the lower rect reads at a glance. */
+.zone-chips-inbag {
+  border: 1px dashed rgba(37, 99, 235, 0.45);
+  background: rgba(37, 99, 235, 0.07);
+  border-radius: 8px;
 }
 
-/* Inside venn-rect-play: play-not-bag chips on the RIGHT (non-overlap). */
-.zone-chips-play-not-bag {
-  top: 32px;
-  right: 12px;
-  width: 38%;
-}
-
-/* --- Drop zones (now only the inner not-play sub-rect) ---- */
-
-.drop-zone {
-  position: absolute;
-  background: rgba(255, 255, 255, 0.92);
-  border: 2px dashed #94a3b8;
-  border-radius: 10px;
-  padding: 0.5rem 0.6rem;
-  z-index: 4; /* above both rects */
-}
-
-.drop-zone-active {
-  background: #fff;
-  border-color: #475569;
-  border-style: solid;
-}
-
-.drop-zone h3 {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin: 0 0 0.35rem 0;
-  color: #475569;
-  text-align: left;
-}
-
-.drop-zone .role-list {
-  min-height: 36px;
-}
-
-.drop-zone .empty-hint {
-  color: #94a3b8;
-  font-style: italic;
-  font-size: 0.75rem;
-  padding: 0.3rem;
-}
-
-/* Bag, NOT in Play: visually nested INSIDE the bag rectangle as a
- * stronger-tinted sub-area. Higher z-index so drops on its area land
- * here, not on the bag rect underneath. */
-.drop-zone-bag-notplay {
-  top: 170px;
+/* Not-in-Play rect — upper sub-zone (inside In Bag): "bag, NOT in play". */
+.zone-chips-bag-not-play {
+  top: 22px;
   left: 6%;
-  width: 22%;
-  min-height: 100px;
-  z-index: 4;
-  background: rgba(37, 99, 235, 0.14);
-  border-color: #2563eb;
+  width: 88%;
+}
+/* Not-in-Play rect — lower sub-zone (below In Bag): Demon bluffs. */
+.zone-chips-bluffs {
+  top: 144px;
+  left: 6%;
+  width: 88%;
+}
+
+/* In-Play rect — upper sub-zone (inside In Bag): "bag AND play". */
+.zone-chips-bag-and-play {
+  top: 22px;
+  left: 6%;
+  width: 88%;
+}
+/* In-Play rect — lower sub-zone (below In Bag): "play, NOT in bag". */
+.zone-chips-play-not-bag {
+  top: 144px;
+  left: 6%;
+  width: 88%;
 }
 
 /* The "neither" zone is the container itself; this is the visible badge. */
@@ -321,9 +308,4 @@ h1, h2, h3, h4 {
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-}
-
-/* Hide the in-zone label/empty-hint for "neither" since it's on the container. */
-.drop-zone-neither {
-  display: none;
 }

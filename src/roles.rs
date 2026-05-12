@@ -124,39 +124,6 @@ impl Role {
         }
     }
 
-    pub fn id(self) -> &'static str {
-        match self {
-            Role::Washerwoman => "washerwoman",
-            Role::Librarian => "librarian",
-            Role::Investigator => "investigator",
-            Role::Chef => "chef",
-            Role::Empath => "empath",
-            Role::FortuneTeller => "fortune_teller",
-            Role::Undertaker => "undertaker",
-            Role::Monk => "monk",
-            Role::Ravenkeeper => "ravenkeeper",
-            Role::Virgin => "virgin",
-            Role::Slayer => "slayer",
-            Role::Soldier => "soldier",
-            Role::Mayor => "mayor",
-            Role::Butler => "butler",
-            Role::Drunk => "drunk",
-            Role::Recluse => "recluse",
-            Role::Saint => "saint",
-            Role::Lunatic => "lunatic",
-            Role::Poisoner => "poisoner",
-            Role::Spy => "spy",
-            Role::Baron => "baron",
-            Role::ScarletWoman => "scarlet_woman",
-            Role::Marionette => "marionette",
-            Role::Imp => "imp",
-        }
-    }
-
-    pub fn from_id(id: &str) -> Option<Role> {
-        Role::ALL.iter().copied().find(|r| r.id() == id)
-    }
-
     pub fn team(self) -> Team {
         use Role::*;
         match self {
