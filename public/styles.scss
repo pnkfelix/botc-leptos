@@ -112,17 +112,19 @@ h1, h2, h3, h4 {
  *
  * A real CSS grid, so each row grows to fit its chips and the decorative
  * rectangles (grid items spanning rows) grow with them — nothing has a
- * hard-coded size.
+ * hard-coded size. Columns are 1fr / 3fr: the Not-in-Play side will never
+ * hold many roles, so it gets the narrow quarter.
  *
- *   ┌──────────────── IN BAG ─────────────────┐
- *   │  in bag — play unspecified:  [chip] ...  │   row 1  (spans both cols)
- *   │ ┌ in bag & ─────┐ ┌ in bag & ──────────┐│
- *   │ │ not in play   │ │ in play            ││   row 2  (the two intersections)
- *   └─┤  [chip] ...   ├─┤  [chip] ...        ├┘
- *     │ demon bluffs  │ │ in play, not in bag│     row 3  (hang below In Bag)
- *     │  [chip] ...   │ │  [chip] ...        │
- *     │   NOT IN PLAY │ │   IN PLAY          │
- *     └───────────────┘ └────────────────────┘
+ *   ┌──────────────────── IN BAG ─────────────────────────┐
+ *   │  in bag — play unspecified:  [chip] ...              │   row 1 (both cols)
+ *   │ ┌ in bag & ──┐ ┌ in bag & in play ─────────────────┐│
+ *   │ │ not in play│ │  [chip] [chip] [chip] ...         ││   row 2 (intersections)
+ *   └─┤ [chip] ... ├─┤                                   ├┘
+ *     │ demon      │ │ in play, not in bag               │     row 3 (hang below)
+ *     │ bluffs     │ │  [chip] ...                       │
+ *     │ [chip] ... │ │                                   │
+ *     │ NOT IN PLAY│ │                IN PLAY            ││
+ *     └────────────┘ └───────────────────────────────────┘
  *
  * Stacking: side rects z1, In-Bag rect z2 (its border draws over the side
  * rects so it visually contains rows 1–2), zones z3, big labels z4. Each
@@ -133,7 +135,7 @@ h1, h2, h3, h4 {
 
 .venn-container {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 3fr;  /* Not-in-Play side never holds much */
   gap: 0;
   position: relative;
   padding: 0.6rem;
