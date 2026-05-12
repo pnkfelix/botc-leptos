@@ -112,8 +112,9 @@ h1, h2, h3, h4 {
  *
  * A real CSS grid, so each row grows to fit its chips and the decorative
  * rectangles (grid items spanning rows) grow with them — nothing has a
- * hard-coded size. Columns are 1fr / 3fr: the Not-in-Play side will never
- * hold many roles, so it gets the narrow quarter.
+ * hard-coded size. Columns are 3fr / 7fr: the Not-in-Play side never holds
+ * many roles, so it gets the narrower share — but wide enough that the 3
+ * demon bluffs don't pile into a single column.
  *
  *   ┌──────────────────── IN BAG ─────────────────────────┐
  *   │  in bag — play unspecified:  [chip] ...              │   row 1 (both cols)
@@ -135,7 +136,8 @@ h1, h2, h3, h4 {
 
 .venn-container {
   display: grid;
-  grid-template-columns: 1fr 3fr;  /* Not-in-Play side never holds much */
+  grid-template-columns: 3fr 7fr;  /* Not-in-Play side is narrower, but wide
+                                       enough for the 3 demon bluffs */
   gap: 0;
   position: relative;
   padding: 0.6rem;
