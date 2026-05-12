@@ -60,18 +60,6 @@ impl Slot {
         Slot::Bluffs,
         Slot::Neither,
     ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Slot::Palette => "Palette",
-            Slot::BagNotPlay => "In Bag, NOT in Play",
-            Slot::BagOnly => "In Bag (play unspecified)",
-            Slot::BagAndPlay => "In Bag AND in Play",
-            Slot::PlayNotBag => "In Play, NOT in Bag",
-            Slot::Bluffs => "Demon Bluff (not in bag, not in play)",
-            Slot::Neither => "NOT in Bag, NOT in Play",
-        }
-    }
 }
 
 /// Owns every role token. There is exactly one `RoleToken` per role across
